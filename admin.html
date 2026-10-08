@@ -1,6 +1,6 @@
 <title>Cash Out — Admin</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ably/1.2.50/ably.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ably@1.2.50/ably.min.js"></script>
 
 <style>
 :root {
@@ -21,7 +21,6 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { min-height: 100%; background: var(--bg); color: var(--fg); font-family: var(--font-b); }
 
-/* HEADER */
 header {
   position: sticky; top: 0; z-index: 10;
   display: flex; align-items: center; justify-content: space-between;
@@ -37,13 +36,9 @@ header {
 .conn-status.wait { color: var(--gold); }
 .conn-status.err  { color: var(--red); }
 
-/* LAYOUT */
 .page { padding: 1em; display: flex; flex-direction: column; gap: 1em; max-width: 520px; margin: 0 auto; }
-
-/* SECTION */
 .section-title { font-size: 0.65rem; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; margin-bottom: 0.6em; }
 
-/* TIMER CARD */
 .timer-card {
   background: var(--card); border: 1px solid var(--border); border-radius: 10px;
   padding: 1em 1.2em; display: flex; align-items: center; justify-content: space-between;
@@ -55,13 +50,14 @@ header {
 .btn-reset-timer { font-family: var(--font-d); font-size: 0.9rem; letter-spacing: 0.1em; padding: 0.5em 1em; background: var(--border); color: var(--muted); border: none; border-radius: 6px; cursor: pointer; }
 .btn-reset-timer:hover { color: var(--fg); }
 
-/* BIG BUTTONS */
 .big-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7em; }
 .btn-big {
   font-family: var(--font-d); font-size: 1.4rem; letter-spacing: 0.1em;
   padding: 0.8em 0.5em; border: none; border-radius: 10px; cursor: pointer;
   transition: opacity 0.15s, transform 0.1s;
   display: flex; flex-direction: column; align-items: center; gap: 0.1em;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 .btn-big:active { opacity: 0.7; transform: scale(0.97); }
 .btn-big small { font-size: 0.6rem; letter-spacing: 0.1em; font-family: var(--font-b); opacity: 0.7; }
@@ -69,7 +65,6 @@ header {
 .btn-recover{ background: var(--green); color: #000; }
 .btn-bull   { background: #1a1a1a; border: 1px solid var(--border); color: var(--gold); }
 
-/* PRICE LIST */
 .drink-row {
   background: var(--card); border: 1px solid var(--border); border-radius: 8px;
   padding: 0.75em 1em; display: flex; align-items: center; gap: 0.8em;
@@ -89,7 +84,6 @@ header {
 .dr-pct.down { color: var(--red); }
 .dr-pct.norm { color: var(--muted); }
 
-/* EDIT MODAL */
 .modal-bg {
   position: fixed; inset: 0; background: rgba(0,0,0,0.9);
   display: flex; align-items: center; justify-content: center;
@@ -118,12 +112,12 @@ header {
 .btn-edit { width: 100%; background: var(--surface); border: 1px solid var(--border); color: var(--fg); font-family: var(--font-d); font-size: 1rem; letter-spacing: 0.1em; padding: 0.6em; border-radius: 8px; cursor: pointer; margin-top: 0.3em; }
 .btn-edit:hover { border-color: var(--muted); }
 
-/* STATUS TOAST */
 #toast {
   position: fixed; bottom: 1.5em; left: 50%; transform: translateX(-50%);
   background: var(--surface); border: 1px solid var(--border); color: var(--fg);
   font-size: 0.85rem; padding: 0.6em 1.2em; border-radius: 8px;
   opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap;
+  z-index: 99;
 }
 #toast.show { opacity: 1; }
 </style>
@@ -138,7 +132,6 @@ header {
 
 <div class="page">
 
-  <!-- TIMER -->
   <div>
     <div class="section-title">Prochain crash dans</div>
     <div class="timer-card">
@@ -150,7 +143,6 @@ header {
     </div>
   </div>
 
-  <!-- ACTION BUTTONS -->
   <div>
     <div class="section-title">Contrôles marché</div>
     <div class="big-btns">
@@ -169,7 +161,6 @@ header {
     </div>
   </div>
 
-  <!-- PRIX EN DIRECT -->
   <div>
     <div class="section-title">Prix en direct</div>
     <div id="price-list"></div>
@@ -178,7 +169,6 @@ header {
 
 </div>
 
-<!-- EDIT MODAL -->
 <div class="modal-bg" id="modal-bg">
   <div class="modal">
     <h2>✏️ BOISSONS</h2>
@@ -214,29 +204,54 @@ let remaining = 20 * 60;
 
 function initPrices() { drinks.forEach(d => { prices[d.id] = d.normal; }); }
 
-// ── PUBLISH ──
-const ably = new Ably.Realtime({ key: ABLY_KEY });
-const ch   = ably.channels.get(CHANNEL);
+// ── ABLY ──
+let ch = null;
+let ablyReady = false;
 
-ably.connection.on('connected', () => {
-  const el = document.getElementById('conn-status');
-  el.textContent = '● TV connectée'; el.className = 'conn-status ok';
-});
-ably.connection.on('disconnected', () => {
-  const el = document.getElementById('conn-status');
-  el.textContent = '○ Déconnecté'; el.className = 'conn-status err';
-});
+function initAbly() {
+  try {
+    const ably = new Ably.Realtime({ key: ABLY_KEY, closeOnUnload: true });
+    ch = ably.channels.get(CHANNEL);
 
-function publish(event, data) {
-  ch.publish('event', { event, data });
+    ably.connection.on('connected', () => {
+      setStatus('● Connecté', 'ok');
+      ablyReady = true;
+    });
+    ably.connection.on('disconnected', () => {
+      setStatus('○ Déconnecté', 'err');
+      ablyReady = false;
+    });
+    ably.connection.on('failed', (err) => {
+      setStatus('✕ Erreur connexion', 'err');
+      ablyReady = false;
+      toast('Erreur Ably: ' + (err && err.message ? err.message : 'inconnue'));
+    });
+  } catch(e) {
+    setStatus('✕ Erreur', 'err');
+    toast('Erreur init Ably: ' + e.message);
+  }
 }
 
+function setStatus(text, cls) {
+  const el = document.getElementById('conn-status');
+  el.textContent = text;
+  el.className = 'conn-status ' + cls;
+}
+
+function publish(event, data) {
+  if (!ch) { toast('⚠️ Pas de connexion'); return; }
+  ch.publish('event', { event, data }, function(err) {
+    if (err) toast('⚠️ Erreur envoi: ' + err.message);
+  });
+}
+
+// ── ACTIONS ──
 function doCrash() {
   crashed = true;
   drinks.forEach(d => prices[d.id] = d.low);
   publish('crash', { prices });
   renderPriceList();
-  toast('📉 Crash envoyé à la TV');
+  toast('📉 Crash envoyé !');
 }
 
 function doRecover() {
@@ -245,14 +260,14 @@ function doRecover() {
   remaining = 20 * 60;
   publish('recover', { prices });
   renderPriceList();
-  toast('📈 Remontée envoyée à la TV');
+  toast('📈 Remontée envoyée !');
 }
 
 function doBull() {
   drinks.forEach(d => prices[d.id] = d.high);
   publish('prices', { prices });
   renderPriceList();
-  toast('🚀 Bull run envoyé à la TV');
+  toast('🚀 Bull run envoyé !');
 }
 
 function resetTimer() {
@@ -303,14 +318,15 @@ function saveEdit() {
   renderPriceList();
   publish('prices', { drinks, prices });
   closeEdit();
-  toast('✓ Boissons mises à jour sur la TV');
+  toast('✓ Boissons mises à jour !');
 }
 
 // ── TOAST ──
 function toast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg; el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2500);
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
 // ── CLOCK & COUNTDOWN ──
@@ -335,6 +351,7 @@ function tickClock() {
 // ── INIT ──
 initPrices();
 renderPriceList();
+initAbly();
 setInterval(tickClock, 1000);
 tickClock();
 </script>
