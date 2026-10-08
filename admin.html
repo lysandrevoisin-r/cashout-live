@@ -1,0 +1,357 @@
+<title>Cash Out — Admin</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<script src="https://unpkg.com/ably@2.6.1/build/ably.min.js"></script>
+
+<style>
+:root {
+  --bg:     #0a0a0a;
+  --surface:#111;
+  --card:   #161616;
+  --border: #252525;
+  --fg:     #fff;
+  --muted:  #555;
+  --green:  #1db954;
+  --red:    #ff3b3b;
+  --gold:   #f5c842;
+  --font-d: 'Bebas Neue', Impact, sans-serif;
+  --font-b: 'Inter', system-ui, sans-serif;
+  --font-m: 'JetBrains Mono', monospace;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { min-height: 100%; background: var(--bg); color: var(--fg); font-family: var(--font-b); }
+
+header {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.7em 1em;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.logo { font-family: var(--font-d); font-size: 1.8rem; letter-spacing: 0.2em; color: var(--green); }
+.header-right { text-align: right; }
+.clock { font-family: var(--font-d); font-size: 1.5rem; letter-spacing: 0.05em; font-variant-numeric: tabular-nums; }
+.conn-status { font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 2px; }
+.conn-status.ok   { color: var(--green); }
+.conn-status.wait { color: var(--gold); }
+.conn-status.err  { color: var(--red); }
+
+.page { padding: 1em; display: flex; flex-direction: column; gap: 1em; max-width: 520px; margin: 0 auto; }
+.section-title { font-size: 0.65rem; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; margin-bottom: 0.6em; }
+
+.timer-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 1em 1.2em; display: flex; align-items: center; justify-content: space-between;
+}
+.timer-val { font-family: var(--font-d); font-size: 3.5rem; letter-spacing: 0.05em; font-variant-numeric: tabular-nums; color: var(--green); transition: color 0.3s; }
+.timer-val.warn   { color: var(--gold); }
+.timer-val.danger { color: var(--red); }
+.timer-lbl { font-size: 0.7rem; letter-spacing: 0.15em; color: var(--muted); text-transform: uppercase; }
+.btn-reset-timer { font-family: var(--font-d); font-size: 0.9rem; letter-spacing: 0.1em; padding: 0.5em 1em; background: var(--border); color: var(--muted); border: none; border-radius: 6px; cursor: pointer; }
+.btn-reset-timer:hover { color: var(--fg); }
+
+.big-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7em; }
+.btn-big {
+  font-family: var(--font-d); font-size: 1.4rem; letter-spacing: 0.1em;
+  padding: 0.8em 0.5em; border: none; border-radius: 10px; cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  display: flex; flex-direction: column; align-items: center; gap: 0.1em;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.btn-big:active { opacity: 0.7; transform: scale(0.97); }
+.btn-big small { font-size: 0.6rem; letter-spacing: 0.1em; font-family: var(--font-b); opacity: 0.7; }
+.btn-crash  { background: var(--red);   color: #fff; grid-column: 1 / -1; font-size: 2rem; padding: 1em; }
+.btn-recover{ background: var(--green); color: #000; }
+.btn-bull   { background: #1a1a1a; border: 1px solid var(--border); color: var(--gold); }
+
+.drink-row {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.75em 1em; display: flex; align-items: center; gap: 0.8em;
+  margin-bottom: 0.5em;
+}
+.dr-name { flex: 1; font-weight: 600; font-size: 0.9rem; }
+.dr-price {
+  font-family: var(--font-d); font-size: 1.8rem; letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums; min-width: 80px; text-align: right;
+  transition: color 0.4s;
+}
+.dr-price.up   { color: var(--green); }
+.dr-price.down { color: var(--red); }
+.dr-price.norm { color: var(--fg); }
+.dr-pct { font-family: var(--font-m); font-size: 0.7rem; min-width: 48px; text-align: right; }
+.dr-pct.up   { color: var(--green); }
+.dr-pct.down { color: var(--red); }
+.dr-pct.norm { color: var(--muted); }
+
+.modal-bg {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.9);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.modal-bg.show { opacity: 1; pointer-events: auto; }
+.modal {
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 1.3em; width: min(460px, 94vw); max-height: 85vh; overflow-y: auto;
+}
+.modal h2 { font-family: var(--font-d); font-size: 1.4rem; letter-spacing: 0.1em; color: var(--green); margin-bottom: 0.8em; }
+.edit-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 0.4em; align-items: end; margin-bottom: 0.5em; }
+.field label { display: block; font-size: 0.6rem; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; margin-bottom: 0.25em; }
+.field input {
+  width: 100%; background: var(--surface); border: 1px solid var(--border); color: var(--fg);
+  font-family: var(--font-m); font-size: 0.85rem; padding: 0.4em 0.6em; border-radius: 5px;
+}
+.field input:focus { outline: none; border-color: var(--green); }
+.field { margin-bottom: 0; }
+.btn-del { background: none; border: none; color: var(--red); font-size: 1.1rem; cursor: pointer; padding: 0.4em; }
+.btn-add { background: none; border: 1px dashed var(--border); color: var(--muted); width: 100%; padding: 0.5em; border-radius: 6px; cursor: pointer; margin: 0.4em 0 0.8em; font-size: 0.85rem; }
+.btn-add:hover { border-color: var(--green); color: var(--green); }
+.modal-footer { display: flex; gap: 0.6em; }
+.btn-save { background: var(--green); color: #000; font-family: var(--font-d); font-size: 1rem; letter-spacing: 0.1em; padding: 0.55em 1.2em; border: none; border-radius: 6px; cursor: pointer; flex: 1; }
+.btn-cancel { background: var(--border); color: var(--muted); font-family: var(--font-d); font-size: 1rem; letter-spacing: 0.1em; padding: 0.55em 1.2em; border: none; border-radius: 6px; cursor: pointer; }
+.btn-edit { width: 100%; background: var(--surface); border: 1px solid var(--border); color: var(--fg); font-family: var(--font-d); font-size: 1rem; letter-spacing: 0.1em; padding: 0.6em; border-radius: 8px; cursor: pointer; margin-top: 0.3em; }
+.btn-edit:hover { border-color: var(--muted); }
+
+#toast {
+  position: fixed; bottom: 1.5em; left: 50%; transform: translateX(-50%);
+  background: var(--surface); border: 1px solid var(--border); color: var(--fg);
+  font-size: 0.85rem; padding: 0.6em 1.2em; border-radius: 8px;
+  opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap;
+  z-index: 99;
+}
+#toast.show { opacity: 1; }
+</style>
+
+<header>
+  <div class="logo">CASH OUT</div>
+  <div class="header-right">
+    <div class="clock" id="clock">--:--:--</div>
+    <div class="conn-status wait" id="conn-status">Connexion…</div>
+  </div>
+</header>
+
+<div class="page">
+
+  <div>
+    <div class="section-title">Prochain crash dans</div>
+    <div class="timer-card">
+      <div>
+        <div class="timer-val" id="countdown">20:00</div>
+        <div class="timer-lbl">Compte à rebours</div>
+      </div>
+      <button class="btn-reset-timer" onclick="resetTimer()">↺ Reset 20:00</button>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-title">Contrôles marché</div>
+    <div class="big-btns">
+      <button class="btn-big btn-crash" onclick="doCrash()">
+        📉 CRASH
+        <small>Tous les prix au plancher</small>
+      </button>
+      <button class="btn-big btn-recover" onclick="doRecover()">
+        📈 REMONTER
+        <small>Prix normaux</small>
+      </button>
+      <button class="btn-big btn-bull" onclick="doBull()">
+        🚀 BULL RUN
+        <small>Prix au maximum</small>
+      </button>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-title">Prix en direct</div>
+    <div id="price-list"></div>
+    <button class="btn-edit" onclick="openEdit()">✏️ Modifier les boissons et prix</button>
+  </div>
+
+</div>
+
+<div class="modal-bg" id="modal-bg">
+  <div class="modal">
+    <h2>✏️ BOISSONS</h2>
+    <div id="drinks-editor"></div>
+    <button class="btn-add" onclick="addRow()">+ Ajouter une boisson</button>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeEdit()">Annuler</button>
+      <button class="btn-save" onclick="saveEdit()">✓ ENREGISTRER ET DIFFUSER</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const ABLY_KEY = 'HWuUIA.eCUdiw:BcnMlAetft08risVQk6sAV5l9wgb2Bej5wmDgzOODp4';
+const CHANNEL  = 'cashout-live';
+
+let drinks = [
+  { id:'beer25',   cat:'🍺 Bières',     name:'Bière pression 25cl', normal:3.00, low:2.00, high:4.00 },
+  { id:'beer50',   cat:'🍺 Bières',     name:'Bière pression 50cl', normal:5.00, low:3.50, high:6.50 },
+  { id:'shot',     cat:'🥃 Shots',      name:'Shot simple',          normal:2.50, low:1.50, high:3.50 },
+  { id:'shotprem', cat:'🥃 Shots',      name:'Shot premium',         normal:3.50, low:2.50, high:5.00 },
+  { id:'cocktail', cat:'🍹 Cocktails',  name:'Cocktail classique',   normal:7.00, low:5.00, high:9.00 },
+  { id:'cocksign', cat:'🍹 Cocktails',  name:'Cocktail signature',   normal:9.50, low:7.00, high:12.00 },
+  { id:'soft',     cat:'🥤 Softs',      name:'Eau / Soda',           normal:2.00, low:1.50, high:3.00 },
+  { id:'vodka',    cat:'🍾 Bouteilles', name:'Vodka (70cl)',          normal:70.00,low:55.00,high:85.00 },
+  { id:'champ',    cat:'🍾 Bouteilles', name:'Champagne',            normal:60.00,low:45.00,high:75.00 },
+];
+let prices = {};
+let crashed = false;
+let remaining = 20 * 60;
+
+function initPrices() { drinks.forEach(d => { prices[d.id] = d.normal; }); }
+
+// ── ABLY ──
+let ch = null;
+let ablyReady = false;
+
+function initAbly() {
+  try {
+    const ably = new Ably.Realtime({ key: ABLY_KEY, closeOnUnload: true });
+    ch = ably.channels.get(CHANNEL);
+
+    ably.connection.on('connected', () => {
+      setStatus('● Connecté', 'ok');
+      ablyReady = true;
+    });
+    ably.connection.on('disconnected', () => {
+      setStatus('○ Déconnecté', 'err');
+      ablyReady = false;
+    });
+    ably.connection.on('failed', (err) => {
+      setStatus('✕ Erreur connexion', 'err');
+      ablyReady = false;
+      toast('Erreur Ably: ' + (err && err.message ? err.message : 'inconnue'));
+    });
+  } catch(e) {
+    setStatus('✕ Erreur', 'err');
+    toast('Erreur init Ably: ' + e.message);
+  }
+}
+
+function setStatus(text, cls) {
+  const el = document.getElementById('conn-status');
+  el.textContent = text;
+  el.className = 'conn-status ' + cls;
+}
+
+function publish(event, data) {
+  if (!ch) { toast('⚠️ Pas de connexion'); return; }
+  ch.publish('event', { event, data }, function(err) {
+    if (err) toast('⚠️ Erreur envoi: ' + err.message);
+  });
+}
+
+// ── ACTIONS ──
+function doCrash() {
+  crashed = true;
+  drinks.forEach(d => prices[d.id] = d.low);
+  publish('crash', { prices });
+  renderPriceList();
+  toast('📉 Crash envoyé !');
+}
+
+function doRecover() {
+  crashed = false;
+  drinks.forEach(d => prices[d.id] = d.normal);
+  remaining = 20 * 60;
+  publish('recover', { prices });
+  renderPriceList();
+  toast('📈 Remontée envoyée !');
+}
+
+function doBull() {
+  drinks.forEach(d => prices[d.id] = d.high);
+  publish('prices', { prices });
+  renderPriceList();
+  toast('🚀 Bull run envoyé !');
+}
+
+function resetTimer() {
+  remaining = 20 * 60;
+  publish('timer', { remaining });
+  toast('↺ Timer remis à 20:00');
+}
+
+// ── PRICE LIST ──
+function renderPriceList() {
+  document.getElementById('price-list').innerHTML = drinks.map(d => {
+    const cur = prices[d.id] ?? d.normal;
+    const pct = (cur - d.normal) / d.normal * 100;
+    const dir = cur > d.normal + 0.01 ? 'up' : cur < d.normal - 0.01 ? 'down' : 'norm';
+    return `<div class="drink-row">
+      <div class="dr-name">${d.name}</div>
+      <div class="dr-price ${dir}">${cur.toFixed(2)} €</div>
+      <div class="dr-pct ${dir}">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</div>
+    </div>`;
+  }).join('');
+}
+
+// ── EDIT ──
+let editDrinks = [];
+function openEdit() {
+  editDrinks = JSON.parse(JSON.stringify(drinks));
+  renderEditor();
+  document.getElementById('modal-bg').classList.add('show');
+}
+function closeEdit() { document.getElementById('modal-bg').classList.remove('show'); }
+function renderEditor() {
+  document.getElementById('drinks-editor').innerHTML = editDrinks.map((d, i) => `
+    <div class="edit-row">
+      <div class="field"><label>Nom</label><input value="${d.name}" oninput="editDrinks[${i}].name=this.value"></div>
+      <div class="field"><label>Normal €</label><input type="number" step="0.5" min="0" value="${d.normal}" oninput="editDrinks[${i}].normal=+this.value"></div>
+      <div class="field"><label>Haut €</label><input type="number" step="0.5" min="0" value="${d.high}" oninput="editDrinks[${i}].high=+this.value"></div>
+      <div class="field"><label>Bas €</label><input type="number" step="0.5" min="0" value="${d.low}" oninput="editDrinks[${i}].low=+this.value"></div>
+      <button class="btn-del" onclick="editDrinks.splice(${i},1);renderEditor()">✕</button>
+    </div>`).join('');
+}
+function addRow() {
+  editDrinks.push({ id:'drink_'+Date.now(), cat:'🍺 Bières', name:'Nouvelle boisson', normal:4, high:6, low:2 });
+  renderEditor();
+}
+function saveEdit() {
+  drinks = editDrinks.map((d,i) => ({ ...d, id: d.id||'drink_'+i }));
+  initPrices();
+  renderPriceList();
+  publish('prices', { drinks, prices });
+  closeEdit();
+  toast('✓ Boissons mises à jour !');
+}
+
+// ── TOAST ──
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── CLOCK & COUNTDOWN ──
+function tickClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.getHours().toString().padStart(2,'0') + ':' +
+    now.getMinutes().toString().padStart(2,'0') + ':' +
+    now.getSeconds().toString().padStart(2,'0');
+
+  if (!crashed) {
+    const el = document.getElementById('countdown');
+    const m = Math.floor(remaining / 60).toString().padStart(2,'0');
+    const s = (remaining % 60).toString().padStart(2,'0');
+    el.textContent = m + ':' + s;
+    el.className = 'timer-val' + (remaining <= 60 ? ' danger' : remaining <= 180 ? ' warn' : '');
+    if (remaining > 0) remaining--;
+    else { doCrash(); remaining = 20 * 60; }
+  }
+}
+
+// ── INIT ──
+initPrices();
+renderPriceList();
+initAbly();
+setInterval(tickClock, 1000);
+tickClock();
+</script>
