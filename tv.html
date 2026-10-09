@@ -265,7 +265,7 @@ function tickClock() {
     const m = Math.floor(remaining / 60).toString().padStart(2,'0');
     const s = (remaining % 60).toString().padStart(2,'0');
     el.textContent = m + ':' + s;
-    el.className = 'crash-timer' + (remaining <= 60 ? ' danger' : remaining <= 180 ? ' warn' : '');
+    el.className = 'crash-timer' + (remaining <= 60 ? ' crash' : remaining <= 180 ? ' warn' : '');
     if (remaining > 0) remaining--;
   }
 }
