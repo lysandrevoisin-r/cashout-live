@@ -1,0 +1,262 @@
+<title>Delirium — Admin</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+
+<style>
+:root {
+  --bg:#0a0a0a;--surface:#111;--card:#161616;--border:#252525;
+  --fg:#fff;--muted:#555;--green:#1db954;--red:#ff3b3b;--gold:#f5c842;
+  --font-d:'Bebas Neue',Impact,sans-serif;
+  --font-b:'Inter',system-ui,sans-serif;
+  --font-m:'JetBrains Mono',monospace;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%;background:var(--bg);color:var(--fg);font-family:var(--font-b)}
+header{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:.7em 1em;background:var(--surface);border-bottom:1px solid var(--border)}
+.logo{font-family:var(--font-d);font-size:1.8rem;letter-spacing:.2em;color:var(--green)}
+.conn-status{font-size:.65rem;letter-spacing:.1em;text-transform:uppercase}
+.conn-status.ok{color:var(--green)}.conn-status.wait{color:var(--gold)}.conn-status.err{color:var(--red)}
+.page{padding:1em;display:flex;flex-direction:column;gap:1.2em;max-width:540px;margin:0 auto}
+.section-title{font-size:.65rem;letter-spacing:.2em;color:var(--muted);text-transform:uppercase;margin-bottom:.6em}
+.drink-row{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.85em 1em;display:flex;align-items:center;gap:.8em;margin-bottom:.5em;cursor:pointer;transition:border-color .2s,background .2s;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.drink-row.selected{border-color:var(--red);background:rgba(255,59,59,.08)}
+.check{width:22px;height:22px;border-radius:5px;border:2px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .2s,border-color .2s}
+.drink-row.selected .check{background:var(--red);border-color:var(--red)}
+.check-mark{display:none;color:#fff;font-size:14px;font-weight:700}
+.drink-row.selected .check-mark{display:block}
+.drink-info{flex:1;min-width:0}
+.drink-name{font-weight:600;font-size:.95rem}
+.drink-prices{display:flex;gap:.6em;margin-top:.25em}
+.price-tag{font-family:var(--font-m);font-size:.72rem;padding:.1em .45em;border-radius:4px}
+.price-normal{background:rgba(255,255,255,.06);color:var(--muted)}
+.price-crash{background:rgba(255,59,59,.12);color:var(--red)}
+.btn{width:100%;padding:1em;border:none;border-radius:12px;font-family:var(--font-d);font-size:1.4rem;letter-spacing:.15em;cursor:pointer;transition:opacity .2s,transform .1s;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.btn:active{transform:scale(.97)}
+.btn-crash{background:var(--red);color:#fff}
+.btn-recover{background:var(--green);color:#000}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.status-bar{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.8em 1em;font-family:var(--font-m);font-size:.75rem;color:var(--muted);min-height:2.5em}
+</style>
+
+<div style="display:none" id="app">
+<header>
+  <div class="logo">DELIRIUM</div>
+  <div class="conn-status wait" id="conn">CONNEXION...</div>
+</header>
+<div class="page">
+  <div>
+    <div class="section-title">Boissons en crash</div>
+    <div id="drink-list"></div>
+  </div>
+  <button class="btn btn-crash" id="btn-crash" disabled>CRASH !</button>
+  <button class="btn btn-recover" id="btn-recover" disabled>RETABLIR LES PRIX</button>
+  <div class="status-bar" id="status">En attente...</div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.7/axios.min.js"></script>
+<script>
+var PUSHER_APP_ID  = '2201096';
+var PUSHER_KEY     = '3b240da2d6a217dd30b5';
+var PUSHER_SECRET  = 'd6b66359bb4a09039dee';
+var PUSHER_CLUSTER = 'eu';
+var CHANNEL = 'cashout-live';
+
+var drinks = [
+  { id:'beer25',   name:'Biere pression 25cl', normal:3.00,  low:2.00  },
+  { id:'beer50',   name:'Biere pression 50cl', normal:5.00,  low:3.50  },
+  { id:'shot',     name:'Shot simple',          normal:2.50,  low:1.50  },
+  { id:'shotprem', name:'Shot premium',         normal:3.50,  low:2.50  },
+  { id:'cocktail', name:'Cocktail classique',   normal:7.00,  low:5.00  },
+  { id:'cocksign', name:'Cocktail signature',   normal:9.50,  low:7.00  },
+  { id:'soft',     name:'Eau / Soda',           normal:2.00,  low:1.50  },
+  { id:'vodka',    name:'Vodka 70cl',           normal:70.00, low:55.00 },
+  { id:'champ',    name:'Champagne',            normal:60.00, low:45.00 }
+];
+
+var selected = {};
+var crashed  = {};
+
+function setStatus(msg) { document.getElementById('status').textContent = msg; }
+function setConn(state, txt) {
+  var el = document.getElementById('conn');
+  el.textContent = txt;
+  el.className = 'conn-status ' + state;
+}
+
+// Pusher trigger via REST (HMAC-SHA256 auth)
+async function pusherTrigger(eventName, data) {
+  var body = JSON.stringify({ name: eventName, channel: CHANNEL, data: JSON.stringify(data) });
+  var ts   = Math.floor(Date.now() / 1000).toString();
+  var md5  = await md5Body(body);
+  var toSign = 'POST\n/apps/' + PUSHER_APP_ID + '/events\n'
+    + 'auth_key=' + PUSHER_KEY
+    + '&auth_timestamp=' + ts
+    + '&auth_version=1.0'
+    + '&body_md5=' + md5
+    + '&channel=' + CHANNEL
+    + '&name=' + eventName;
+  var sig  = await hmacSha256(PUSHER_SECRET, toSign);
+  var url  = 'https://api-' + PUSHER_CLUSTER + '.pusher.com/apps/' + PUSHER_APP_ID + '/events'
+    + '?auth_key=' + PUSHER_KEY
+    + '&auth_timestamp=' + ts
+    + '&auth_version=1.0'
+    + '&body_md5=' + md5
+    + '&channel=' + encodeURIComponent(CHANNEL)
+    + '&name=' + encodeURIComponent(eventName)
+    + '&auth_signature=' + sig;
+  var r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: body });
+  if (!r.ok) { var t = await r.text(); throw new Error(r.status + ' ' + t); }
+}
+
+async function hmacSha256(secret, message) {
+  var enc = new TextEncoder();
+  var key = await crypto.subtle.importKey('raw', enc.encode(secret), { name:'HMAC', hash:'SHA-256' }, false, ['sign']);
+  var sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+  return Array.from(new Uint8Array(sig)).map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
+}
+
+async function md5Body(str) {
+  // Use SubtleCrypto MD5 is not available; use a simple fetch to compute or inline a small md5
+  // We'll use a small inline MD5 implementation
+  return md5(str);
+}
+
+// Minimal MD5 (RFC 1321)
+function md5(s) {
+  function safeAdd(x,y){var l=(x&0xFFFF)+(y&0xFFFF),m=(x>>16)+(y>>16)+(l>>16);return(m<<16)|(l&0xFFFF)}
+  function bitRotLeft(n,c){return(n<<c)|(n>>>(32-c))}
+  function md5cmn(q,a,b,x,s,t){return safeAdd(bitRotLeft(safeAdd(safeAdd(a,q),safeAdd(x,t)),s),b)}
+  function md5ff(a,b,c,d,x,s,t){return md5cmn((b&c)|(~b&d),a,b,x,s,t)}
+  function md5gg(a,b,c,d,x,s,t){return md5cmn((b&d)|(c&~d),a,b,x,s,t)}
+  function md5hh(a,b,c,d,x,s,t){return md5cmn(b^c^d,a,b,x,s,t)}
+  function md5ii(a,b,c,d,x,s,t){return md5cmn(c^(b|~d),a,b,x,s,t)}
+  function str2binl(s){var b=[];var m=0xFF;for(var i=0;i<s.length*8;i+=8)b[i>>5]|=(s.charCodeAt(i/8)&m)<<(i%32);return b}
+  function binl2hex(b){var hc='0123456789abcdef';var s='';for(var i=0;i<b.length*4;i++){s+=hc.charAt((b[i>>2]>>((i%4)*8+4))&0xF)+hc.charAt((b[i>>2]>>((i%4)*8))&0xF)}return s}
+  function binlMD5(x,len){
+    x[len>>5]|=0x80<<((len)%32);x[(((len+64)>>>9)<<4)+14]=len;
+    var a=1732584193,b=-271733879,c=-1732584194,d=271733878;
+    for(var i=0;i<x.length;i+=16){
+      var olda=a,oldb=b,oldc=c,oldd=d;
+      a=md5ff(a,b,c,d,x[i+0],7,-680876936);d=md5ff(d,a,b,c,x[i+1],12,-389564586);c=md5ff(c,d,a,b,x[i+2],17,606105819);b=md5ff(b,c,d,a,x[i+3],22,-1044525330);
+      a=md5ff(a,b,c,d,x[i+4],7,-176418897);d=md5ff(d,a,b,c,x[i+5],12,1200080426);c=md5ff(c,d,a,b,x[i+6],17,-1473231341);b=md5ff(b,c,d,a,x[i+7],22,-45705983);
+      a=md5ff(a,b,c,d,x[i+8],7,1770035416);d=md5ff(d,a,b,c,x[i+9],12,-1958414417);c=md5ff(c,d,a,b,x[i+10],17,-42063);b=md5ff(b,c,d,a,x[i+11],22,-1990404162);
+      a=md5ff(a,b,c,d,x[i+12],7,1804603682);d=md5ff(d,a,b,c,x[i+13],12,-40341101);c=md5ff(c,d,a,b,x[i+14],17,-1502002290);b=md5ff(b,c,d,a,x[i+15],22,1236535329);
+      a=md5gg(a,b,c,d,x[i+1],5,-165796510);d=md5gg(d,a,b,c,x[i+6],9,-1069501632);c=md5gg(c,d,a,b,x[i+11],14,643717713);b=md5gg(b,c,d,a,x[i+0],20,-373897302);
+      a=md5gg(a,b,c,d,x[i+5],5,-701558691);d=md5gg(d,a,b,c,x[i+10],9,38016083);c=md5gg(c,d,a,b,x[i+15],14,-660478335);b=md5gg(b,c,d,a,x[i+4],20,-405537848);
+      a=md5gg(a,b,c,d,x[i+9],5,568446438);d=md5gg(d,a,b,c,x[i+14],9,-1019803690);c=md5gg(c,d,a,b,x[i+3],14,-187363961);b=md5gg(b,c,d,a,x[i+8],20,1163531501);
+      a=md5gg(a,b,c,d,x[i+13],5,-1444681467);d=md5gg(d,a,b,c,x[i+2],9,-51403784);c=md5gg(c,d,a,b,x[i+7],14,1735328473);b=md5gg(b,c,d,a,x[i+12],20,-1926607734);
+      a=md5hh(a,b,c,d,x[i+5],4,-378558);d=md5hh(d,a,b,c,x[i+8],11,-2022574463);c=md5hh(c,d,a,b,x[i+11],16,1839030562);b=md5hh(b,c,d,a,x[i+14],23,-35309556);
+      a=md5hh(a,b,c,d,x[i+1],4,-1530992060);d=md5hh(d,a,b,c,x[i+4],11,1272893353);c=md5hh(c,d,a,b,x[i+7],16,-155497632);b=md5hh(b,c,d,a,x[i+10],23,-1094730640);
+      a=md5hh(a,b,c,d,x[i+13],4,681279174);d=md5hh(d,a,b,c,x[i+0],11,-358537222);c=md5hh(c,d,a,b,x[i+3],16,-722521979);b=md5hh(b,c,d,a,x[i+6],23,76029189);
+      a=md5hh(a,b,c,d,x[i+9],4,-640364487);d=md5hh(d,a,b,c,x[i+12],11,-421815835);c=md5hh(c,d,a,b,x[i+15],16,530742520);b=md5hh(b,c,d,a,x[i+2],23,-995338651);
+      a=md5ii(a,b,c,d,x[i+0],6,-198630844);d=md5ii(d,a,b,c,x[i+7],10,1126891415);c=md5ii(c,d,a,b,x[i+14],15,-1416354905);b=md5ii(b,c,d,a,x[i+5],21,-57434055);
+      a=md5ii(a,b,c,d,x[i+12],6,1700485571);d=md5ii(d,a,b,c,x[i+3],10,-1894986606);c=md5ii(c,d,a,b,x[i+10],15,-1051523);b=md5ii(b,c,d,a,x[i+1],21,-2054922799);
+      a=md5ii(a,b,c,d,x[i+8],6,1873313359);d=md5ii(d,a,b,c,x[i+15],10,-30611744);c=md5ii(c,d,a,b,x[i+6],15,-1560198380);b=md5ii(b,c,d,a,x[i+13],21,1309151649);
+      a=md5ii(a,b,c,d,x[i+4],6,-145523070);d=md5ii(d,a,b,c,x[i+11],10,-1120210379);c=md5ii(c,d,a,b,x[i+2],15,718787259);b=md5ii(b,c,d,a,x[i+9],21,-343485551);
+      a=safeAdd(a,olda);b=safeAdd(b,oldb);c=safeAdd(c,oldc);d=safeAdd(d,oldd);
+    }
+    return[a,b,c,d];
+  }
+  var binput = str2binl(s);
+  return binl2hex(binlMD5(binput, s.length*8));
+}
+
+function buildList() {
+  var list = document.getElementById('drink-list');
+  list.innerHTML = '';
+  for (var i = 0; i < drinks.length; i++) {
+    var d = drinks[i];
+    var row = document.createElement('div');
+    row.className = 'drink-row' + (selected[d.id] ? ' selected' : '');
+    row.setAttribute('data-id', d.id);
+    row.innerHTML = '<div class="check"><span class="check-mark">✓</span></div>'
+      + '<div class="drink-info">'
+      + '<div class="drink-name">' + d.name + '</div>'
+      + '<div class="drink-prices">'
+      + '<span class="price-tag price-normal">Normal ' + d.normal.toFixed(2) + '€</span>'
+      + '<span class="price-tag price-crash">Crash ' + d.low.toFixed(2) + '€</span>'
+      + '</div></div>';
+    list.appendChild(row);
+  }
+}
+
+function toggleDrink(id) {
+  if (selected[id]) { delete selected[id]; } else { selected[id] = true; }
+  buildList();
+  updateButtons();
+}
+
+function updateButtons() {
+  var hasSelected = Object.keys(selected).length > 0;
+  var hasCrashed  = Object.keys(crashed).length > 0;
+  document.getElementById('btn-crash').disabled   = !hasSelected;
+  document.getElementById('btn-recover').disabled = !hasCrashed;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  buildList();
+  updateButtons();
+  setConn('ok', 'PRET');
+
+  document.getElementById('drink-list').addEventListener('click', function(e) {
+    var row = e.target.closest('[data-id]');
+    if (row) toggleDrink(row.getAttribute('data-id'));
+  });
+  document.getElementById('drink-list').addEventListener('touchend', function(e) {
+    e.preventDefault();
+    var row = e.target.closest('[data-id]');
+    if (row) toggleDrink(row.getAttribute('data-id'));
+  });
+
+  document.getElementById('btn-crash').addEventListener('click', doCrash);
+  document.getElementById('btn-crash').addEventListener('touchend', function(e){ e.preventDefault(); doCrash(); });
+  document.getElementById('btn-recover').addEventListener('click', doRecover);
+  document.getElementById('btn-recover').addEventListener('touchend', function(e){ e.preventDefault(); doRecover(); });
+});
+
+function doCrash() {
+  var ids = Object.keys(selected);
+  if (ids.length === 0) return;
+  var crashPrices = {};
+  for (var i = 0; i < ids.length; i++) {
+    var d = drinks.find(function(x){ return x.id === ids[i]; });
+    if (d) { crashPrices[d.id] = d.low; crashed[d.id] = true; }
+  }
+  setStatus('Envoi crash...');
+  pusherTrigger('crash', { prices: crashPrices })
+    .then(function() {
+      selected = {};
+      buildList();
+      updateButtons();
+      setStatus('CRASH envoye — ' + new Date().toLocaleTimeString());
+      setConn('ok', 'CONNECTE');
+    })
+    .catch(function(err) {
+      setStatus('Erreur: ' + err.message);
+      setConn('err', 'ERREUR');
+    });
+}
+
+function doRecover() {
+  var normalPrices = {};
+  for (var i = 0; i < drinks.length; i++) normalPrices[drinks[i].id] = drinks[i].normal;
+  setStatus('Retablissement...');
+  pusherTrigger('recover', { prices: normalPrices })
+    .then(function() {
+      crashed = {};
+      selected = {};
+      buildList();
+      updateButtons();
+      setStatus('Prix retablis — ' + new Date().toLocaleTimeString());
+      setConn('ok', 'CONNECTE');
+    })
+    .catch(function(err) {
+      setStatus('Erreur: ' + err.message);
+      setConn('err', 'ERREUR');
+    });
+}
+
+document.getElementById('app').removeAttribute('hidden');
+document.getElementById('app').style.display = '';
+</script>
