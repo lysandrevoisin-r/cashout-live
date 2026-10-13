@@ -1,0 +1,310 @@
+<title>Delirium — Admin</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+
+<style>
+:root{--bg:#0a0a0a;--surface:#111;--card:#161616;--border:#252525;--fg:#fff;--muted:#555;--green:#1db954;--red:#ff3b3b;--gold:#f5c842;color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%;background:var(--bg);color:var(--fg);font-family:'Inter',system-ui,sans-serif}
+header{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:.7em 1em;background:var(--surface);border-bottom:1px solid var(--border)}
+.logo{font-family:'Bebas Neue',Impact,sans-serif;font-size:1.8rem;letter-spacing:.2em;color:var(--green)}
+.conn{font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold)}
+.conn.ok{color:var(--green)}.conn.err{color:var(--red)}
+
+/* tabs */
+.tabs{display:flex;border-bottom:1px solid var(--border);background:var(--surface)}
+.tab{flex:1;padding:.75em;text-align:center;font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;-webkit-tap-highlight-color:transparent}
+.tab.active{color:var(--fg);border-bottom-color:var(--green)}
+
+.page{padding:1em;max-width:540px;margin:0 auto}
+.panel{display:none}.panel.active{display:flex;flex-direction:column;gap:1em}
+.label{font-size:.65rem;letter-spacing:.2em;color:var(--muted);text-transform:uppercase;margin-bottom:.4em}
+
+/* crash panel */
+.drink-row{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.85em 1em;display:flex;align-items:center;gap:.8em;margin-bottom:.5em;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none}
+.drink-row.sel{border-color:var(--red);background:rgba(255,59,59,.08)}
+.drink-row.crashed-row{border-color:rgba(255,59,59,.3)}
+.chk{width:22px;height:22px;border-radius:5px;border:2px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.drink-row.sel .chk{background:var(--red);border-color:var(--red)}
+.chk-mark{display:none;color:#fff;font-size:14px;font-weight:700;line-height:1}
+.drink-row.sel .chk-mark{display:block}
+.drink-info{flex:1;min-width:0}
+.drink-name{font-weight:600;font-size:.95rem}
+.drink-prices{display:flex;gap:.6em;margin-top:.25em}
+.ptag{font-family:'JetBrains Mono',monospace;font-size:.72rem;padding:.1em .45em;border-radius:4px}
+.pnorm{background:rgba(255,255,255,.06);color:var(--muted)}
+.pcrash{background:rgba(255,59,59,.12);color:var(--red)}
+.badge-crashed{font-size:.6rem;padding:.1em .4em;border-radius:4px;background:rgba(255,59,59,.2);color:var(--red);margin-left:auto;flex-shrink:0;font-family:'JetBrains Mono',monospace}
+
+.btn{width:100%;padding:1em;border:none;border-radius:12px;font-family:'Bebas Neue',Impact,sans-serif;font-size:1.4rem;letter-spacing:.15em;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none}
+.btn:active{opacity:.8}
+.btn-crash{background:var(--red);color:#fff}
+.btn-recover{background:var(--green);color:#000}
+.btn:disabled{opacity:.3;cursor:not-allowed}
+.status{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.8em 1em;font-family:'JetBrains Mono',monospace;font-size:.75rem;color:var(--muted);min-height:2.5em}
+
+/* edit panel */
+.edit-row{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.85em 1em;display:flex;flex-direction:column;gap:.6em;margin-bottom:.6em}
+.edit-row-header{display:flex;align-items:center;justify-content:space-between}
+.edit-row-num{font-family:'JetBrains Mono',monospace;font-size:.7rem;color:var(--muted)}
+.btn-del{background:rgba(255,59,59,.15);color:var(--red);border:none;border-radius:6px;padding:.3em .7em;font-size:.75rem;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.btn-del:active{opacity:.7}
+.fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5em}
+.field-group{display:flex;flex-direction:column;gap:.3em}
+.field-group label{font-size:.6rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.field-group input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:.45em .6em;color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:.85rem;width:100%}
+.field-group input:focus{outline:none;border-color:var(--green)}
+.field-name{grid-column:1/-1}
+.btn-add{background:rgba(29,185,84,.12);color:var(--green);border:1px solid rgba(29,185,84,.3);border-radius:10px;padding:.75em;font-size:.9rem;font-weight:600;cursor:pointer;width:100%;-webkit-tap-highlight-color:transparent}
+.btn-add:active{opacity:.7}
+.btn-save{background:var(--green);color:#000;border:none;border-radius:12px;padding:.85em;font-family:'Bebas Neue',Impact,sans-serif;font-size:1.3rem;letter-spacing:.15em;cursor:pointer;width:100%;-webkit-tap-highlight-color:transparent}
+.btn-save:active{opacity:.8}
+</style>
+
+<header>
+  <div class="logo">DELIRIUM</div>
+  <div class="conn" id="conn">CONNEXION...</div>
+</header>
+<div class="tabs">
+  <div class="tab active" data-tab="crash">CRASH</div>
+  <div class="tab" data-tab="edit">BOISSONS</div>
+</div>
+<div class="page">
+
+  <!-- PANEL CRASH -->
+  <div class="panel active" id="panel-crash">
+    <div>
+      <div class="label">Selectionner les boissons a crasher</div>
+      <div id="drink-list"></div>
+    </div>
+    <button class="btn btn-crash" id="btn-crash" disabled>CRASH !</button>
+    <button class="btn btn-recover" id="btn-recover" disabled>RETABLIR LES PRIX</button>
+    <div class="status" id="status">En attente...</div>
+  </div>
+
+  <!-- PANEL EDIT -->
+  <div class="panel" id="panel-edit">
+    <div class="label">Modifier les boissons</div>
+    <div id="edit-list"></div>
+    <button class="btn-add" id="btn-add">+ Ajouter une boisson</button>
+    <button class="btn-save" id="btn-save">ENREGISTRER</button>
+    <div class="status" id="status-edit"></div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
+<script>
+var SUPA_URL = 'https://cbmxbbmgovecjtjvxwjm.supabase.co';
+var SUPA_KEY = 'sb_publishable_sxgrjKa7zjGa67uEMs9ZwA_VtzB1d5d';
+var TOPIC    = 'cashout-live';
+
+var drinks = loadDrinks();
+var selected = {};
+var crashed  = {};
+
+function defaultDrinks() {
+  return [
+    { id:'beer25',   name:'Biere pression 25cl', normal:3.00,  low:2.00  },
+    { id:'beer50',   name:'Biere pression 50cl', normal:5.00,  low:3.50  },
+    { id:'shot',     name:'Shot simple',          normal:2.50,  low:1.50  },
+    { id:'shotprem', name:'Shot premium',         normal:3.50,  low:2.50  },
+    { id:'cocktail', name:'Cocktail classique',   normal:7.00,  low:5.00  },
+    { id:'cocksign', name:'Cocktail signature',   normal:9.50,  low:7.00  },
+    { id:'soft',     name:'Eau / Soda',           normal:2.00,  low:1.50  },
+    { id:'vodka',    name:'Vodka 70cl',           normal:70.00, low:55.00 },
+    { id:'champ',    name:'Champagne',            normal:60.00, low:45.00 }
+  ];
+}
+
+function loadDrinks() {
+  try {
+    var s = localStorage.getItem('delirium-drinks');
+    if (s) return JSON.parse(s);
+  } catch(e) {}
+  return defaultDrinks();
+}
+
+function saveDrinks() {
+  try { localStorage.setItem('delirium-drinks', JSON.stringify(drinks)); } catch(e) {}
+}
+
+// Supabase
+var client  = supabase.createClient(SUPA_URL, SUPA_KEY);
+var channel = client.channel(TOPIC, { config: { broadcast: { self: true } } });
+channel.subscribe(function(s) {
+  var el = document.getElementById('conn');
+  if (s === 'SUBSCRIBED') { el.textContent = 'CONNECTE'; el.className = 'conn ok'; }
+  else if (s === 'CLOSED' || s === 'CHANNEL_ERROR') { el.textContent = 'ERREUR'; el.className = 'conn err'; }
+});
+
+function publish(evt, data) {
+  channel.send({ type:'broadcast', event:evt, payload:data });
+}
+
+// ---- TABS ----
+var lastTouch = 0;
+document.querySelector('.tabs').addEventListener('touchend', function(e) {
+  lastTouch = Date.now(); e.preventDefault();
+  var t = e.target.closest('[data-tab]');
+  if (t) switchTab(t.getAttribute('data-tab'));
+});
+document.querySelector('.tabs').addEventListener('click', function(e) {
+  if (Date.now() - lastTouch < 500) return;
+  var t = e.target.closest('[data-tab]');
+  if (t) switchTab(t.getAttribute('data-tab'));
+});
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(function(t){ t.classList.toggle('active', t.getAttribute('data-tab') === name); });
+  document.querySelectorAll('.panel').forEach(function(p){ p.classList.toggle('active', p.id === 'panel-' + name); });
+  if (name === 'edit') buildEditList();
+}
+
+// ---- CRASH PANEL ----
+function buildList() {
+  var list = document.getElementById('drink-list');
+  list.innerHTML = '';
+  for (var i = 0; i < drinks.length; i++) {
+    var d = drinks[i];
+    var isSel = !!selected[d.id], isCrashed = !!crashed[d.id];
+    var row = document.createElement('div');
+    row.className = 'drink-row' + (isSel ? ' sel' : '') + (isCrashed ? ' crashed-row' : '');
+    row.setAttribute('data-id', d.id);
+    row.innerHTML = '<div class="chk"><span class="chk-mark">&#10003;</span></div>'
+      + '<div class="drink-info"><div class="drink-name">' + d.name + '</div>'
+      + '<div class="drink-prices">'
+      + '<span class="ptag pnorm">Normal ' + d.normal.toFixed(2) + '&euro;</span>'
+      + '<span class="ptag pcrash">Crash ' + d.low.toFixed(2) + '&euro;</span>'
+      + '</div></div>'
+      + (isCrashed ? '<div class="badge-crashed">CRASH</div>' : '');
+    list.appendChild(row);
+  }
+}
+
+function updateButtons() {
+  document.getElementById('btn-crash').disabled   = Object.keys(selected).length === 0;
+  document.getElementById('btn-recover').disabled = Object.keys(crashed).length === 0;
+}
+
+function toggleDrink(id) {
+  if (selected[id]) { delete selected[id]; } else { selected[id] = true; }
+  buildList(); updateButtons();
+}
+
+function doCrash() {
+  var ids = Object.keys(selected);
+  if (!ids.length) return;
+  var prices = {};
+  for (var i = 0; i < ids.length; i++) {
+    for (var j = 0; j < drinks.length; j++) {
+      if (drinks[j].id === ids[i]) { prices[ids[i]] = drinks[j].low; crashed[ids[i]] = true; }
+    }
+  }
+  publish('crash', { prices: prices, ids: ids });
+  selected = {};
+  buildList(); updateButtons();
+  document.getElementById('status').textContent = 'CRASH envoye — ' + new Date().toLocaleTimeString();
+}
+
+function doRecover() {
+  var prices = {};
+  for (var i = 0; i < drinks.length; i++) prices[drinks[i].id] = drinks[i].normal;
+  publish('recover', { prices: prices });
+  crashed = {}; selected = {};
+  buildList(); updateButtons();
+  document.getElementById('status').textContent = 'Prix retablis — ' + new Date().toLocaleTimeString();
+}
+
+var lt = 0;
+function addTapListener(el, fn) {
+  el.addEventListener('touchend', function(e){ lt = Date.now(); e.preventDefault(); fn(); });
+  el.addEventListener('click',    function(){ if (Date.now() - lt < 500) return; fn(); });
+}
+
+document.getElementById('drink-list').addEventListener('touchend', function(e) {
+  lt = Date.now(); e.preventDefault();
+  var row = e.target.closest('[data-id]');
+  if (row) toggleDrink(row.getAttribute('data-id'));
+});
+document.getElementById('drink-list').addEventListener('click', function(e) {
+  if (Date.now() - lt < 500) return;
+  var row = e.target.closest('[data-id]');
+  if (row) toggleDrink(row.getAttribute('data-id'));
+});
+addTapListener(document.getElementById('btn-crash'),   doCrash);
+addTapListener(document.getElementById('btn-recover'), doRecover);
+
+// ---- EDIT PANEL ----
+var editIdCounter = 1000;
+
+function newId() {
+  return 'drink-' + (editIdCounter++);
+}
+
+function buildEditList() {
+  var list = document.getElementById('edit-list');
+  list.innerHTML = '';
+  for (var i = 0; i < drinks.length; i++) {
+    list.appendChild(makeEditRow(drinks[i], i));
+  }
+}
+
+function makeEditRow(d, idx) {
+  var row = document.createElement('div');
+  row.className = 'edit-row';
+  row.setAttribute('data-idx', idx);
+  row.setAttribute('data-drink-id', d.id);
+  row.innerHTML =
+    '<div class="edit-row-header">'
+    + '<span class="edit-row-num">#' + (idx + 1) + '</span>'
+    + '<button class="btn-del" data-del="' + idx + '">Supprimer</button>'
+    + '</div>'
+    + '<div class="fields">'
+    + '<div class="field-group field-name"><label>Nom</label><input type="text" data-field="name" value="' + d.name + '"></div>'
+    + '<div class="field-group"><label>Prix normal (&euro;)</label><input type="number" step="0.5" min="0" data-field="normal" value="' + d.normal.toFixed(2) + '"></div>'
+    + '<div class="field-group"><label>Prix crash (&euro;)</label><input type="number" step="0.5" min="0" data-field="low" value="' + d.low.toFixed(2) + '"></div>'
+    + '</div>';
+  return row;
+}
+
+document.getElementById('edit-list').addEventListener('click', function(e) {
+  var del = e.target.closest('[data-del]');
+  if (del) {
+    var idx = parseInt(del.getAttribute('data-del'));
+    drinks.splice(idx, 1);
+    buildEditList();
+  }
+});
+
+addTapListener(document.getElementById('btn-add'), function() {
+  drinks.push({ id: newId(), name: 'Nouvelle boisson', normal: 5.00, low: 3.00 });
+  buildEditList();
+  // scroll to bottom
+  var list = document.getElementById('edit-list');
+  list.lastChild && list.lastChild.scrollIntoView({ behavior:'smooth' });
+});
+
+addTapListener(document.getElementById('btn-save'), function() {
+  // lire directement les inputs dans l'ordre du DOM (pas par data-idx)
+  var rows = document.getElementById('edit-list').querySelectorAll('.edit-row');
+  var newDrinks = [];
+  for (var i = 0; i < rows.length; i++) {
+    var name   = rows[i].querySelector('[data-field="name"]').value.trim();
+    var normal = parseFloat(rows[i].querySelector('[data-field="normal"]').value) || 0;
+    var low    = parseFloat(rows[i].querySelector('[data-field="low"]').value) || 0;
+    var existingId = rows[i].getAttribute('data-drink-id') || newId();
+    if (!name) continue;
+    newDrinks.push({ id: existingId, name: name, normal: normal, low: low });
+  }
+  drinks = newDrinks;
+  saveDrinks();
+  publish('drinks', { drinks: drinks });
+  selected = {}; crashed = {};
+  buildList(); updateButtons();
+  document.getElementById('status-edit').textContent = 'Enregistre et envoye a la TV — ' + new Date().toLocaleTimeString();
+  switchTab('crash');
+});
+
+buildList();
+updateButtons();
+</script>
